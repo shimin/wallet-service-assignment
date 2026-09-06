@@ -1,0 +1,40 @@
+services:
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8222/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: walletuser
+      POSTGRES_PASSWORD: walletpass
+      POSTGRES_DB: wallet
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U walletuser -d wallet"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  wallet-service:
+    build: .
+    environment:
+      NATS_URL: nats://nats:4222
+      PG_URL: postgres://walletuser:walletpass@postgres:5432/wallet?sslmode=disable
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: on-failure

@@ -1,0 +1,4 @@
+.git
+*.zip
+wallet-service
+*.test
