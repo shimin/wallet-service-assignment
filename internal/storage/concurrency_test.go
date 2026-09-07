@@ -44,18 +44,18 @@ const missingWalletID = "ffffffff-ffff-4fff-8fff-ffffffffffff"
 
 var walletSeq atomic.Uint64
 
-func newWalletID() string {
+func newUUID() string {
 	return fmt.Sprintf("%08x-0000-4000-8000-%012x", os.Getpid(), walletSeq.Add(1))
 }
 
 func newWallet(t *testing.T, s *Store, initial float64) string {
 	t.Helper()
-	id := newWalletID()
+	id := newUUID()
 	t.Cleanup(func() {
 		s.DB.Exec(`DELETE FROM transactions WHERE from_wallet = $1 OR to_wallet = $1`, id)
 		s.DB.Exec(`DELETE FROM wallets WHERE wallet_id = $1`, id)
 	})
-	if err := s.Deposit(id, initial); err != nil {
+	if err := s.Deposit(newUUID(), id, initial); err != nil {
 		t.Fatalf("create wallet: %v", err)
 	}
 	return id
@@ -88,17 +88,17 @@ func runRace(ops []op) int {
 	successes := 0
 	start := make(chan struct{})
 
-	for i, o := range ops {
+	for _, o := range ops {
 		wg.Add(1)
-		go func(i int, o op) {
+		go func() {
 			defer wg.Done()
 			<-start
-			if err := o(fmt.Sprintf("req-%d", i)); err == nil {
+			if err := o(newUUID()); err == nil {
 				mu.Lock()
 				successes++
 				mu.Unlock()
 			}
-		}(i, o)
+		}()
 	}
 	close(start)
 	wg.Wait()
@@ -113,7 +113,7 @@ func TestConcurrentWithdraws(t *testing.T) {
 		wallet := newWallet(t, s, 100)
 		ops := make([]op, 20)
 		for i := range ops {
-			ops[i] = func(reqID string) error { return s.Withdraw(wallet, 100) }
+			ops[i] = func(reqID string) error { return s.Withdraw(reqID, wallet, 100) }
 		}
 
 		successes := runRace(ops)
@@ -135,8 +135,8 @@ func TestWithdrawAndTransfer(t *testing.T) {
 		ops := make([]op, 0, 20)
 		for range 10 {
 			ops = append(ops,
-				func(reqID string) error { return s.Withdraw(src, 100) },
-				func(reqID string) error { return s.Transfer(src, dst, 100) },
+				func(reqID string) error { return s.Withdraw(reqID, src, 100) },
+				func(reqID string) error { return s.Transfer(reqID, src, dst, 100) },
 			)
 		}
 
@@ -157,7 +157,7 @@ func TestTransferToMissingWallet(t *testing.T) {
 	s := testStore(t)
 	src := newWallet(t, s, 100)
 
-	if err := s.Transfer(src, missingWalletID, 100); err == nil {
+	if err := s.Transfer(newUUID(), src, missingWalletID, 100); err == nil {
 		t.Error("want an error transferring to a missing wallet, got nil")
 	}
 	if b := balanceOf(t, s, src); b != 100 {
