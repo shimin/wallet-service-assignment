@@ -82,10 +82,11 @@ func checkLedger(t *testing.T, s *Store, id string) {
 	}
 }
 
-func runRace(ops []op) int {
+func runRace(ops []op) (int, error) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	successes := 0
+	var firstErr error
 	start := make(chan struct{})
 
 	for _, o := range ops {
@@ -93,16 +94,20 @@ func runRace(ops []op) int {
 		go func() {
 			defer wg.Done()
 			<-start
-			if err := o(newUUID()); err == nil {
-				mu.Lock()
+			err := o(newUUID())
+			mu.Lock()
+			switch {
+			case err == nil:
 				successes++
-				mu.Unlock()
+			case firstErr == nil:
+				firstErr = err
 			}
+			mu.Unlock()
 		}()
 	}
 	close(start)
 	wg.Wait()
-	return successes
+	return successes, firstErr
 }
 
 func TestConcurrentWithdraws(t *testing.T) {
@@ -116,7 +121,7 @@ func TestConcurrentWithdraws(t *testing.T) {
 			ops[i] = func(reqID string) error { return s.Withdraw(reqID, wallet, 100) }
 		}
 
-		successes := runRace(ops)
+		successes, _ := runRace(ops)
 		balance := balanceOf(t, s, wallet)
 		checkLedger(t, s, wallet)
 		if successes != 1 || balance != 0 {
@@ -140,7 +145,7 @@ func TestWithdrawAndTransfer(t *testing.T) {
 			)
 		}
 
-		successes := runRace(ops)
+		successes, _ := runRace(ops)
 		from, to := balanceOf(t, s, src), balanceOf(t, s, dst)
 		checkLedger(t, s, src)
 		checkLedger(t, s, dst)
@@ -149,6 +154,33 @@ func TestWithdrawAndTransfer(t *testing.T) {
 		}
 		if to != 100 && to != 200 {
 			t.Fatalf("round %d: want destination 100 or 200, got %.4f", round, to)
+		}
+	}
+}
+
+func TestOppositeTransfers(t *testing.T) {
+	s := testStore(t)
+	warmPool(t, s)
+
+	for round := range 3 {
+		a := newWallet(t, s, 1000)
+		b := newWallet(t, s, 1000)
+		ops := make([]op, 0, 20)
+		for range 10 {
+			ops = append(ops,
+				func(reqID string) error { return s.Transfer(reqID, a, b, 10) },
+				func(reqID string) error { return s.Transfer(reqID, b, a, 10) },
+			)
+		}
+
+		successes, firstErr := runRace(ops)
+		checkLedger(t, s, a)
+		checkLedger(t, s, b)
+		if total := balanceOf(t, s, a) + balanceOf(t, s, b); total != 2000 {
+			t.Fatalf("round %d: want total 2000, got %.4f", round, total)
+		}
+		if successes != len(ops) {
+			t.Fatalf("round %d: want all %d transfers to succeed, got %d (first error: %v)", round, len(ops), successes, firstErr)
 		}
 	}
 }
