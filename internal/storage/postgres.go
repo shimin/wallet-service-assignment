@@ -73,6 +73,9 @@ func (s *Store) Withdraw(requestID, walletID string, amount float64) error {
 
 func (s *Store) Transfer(requestID, fromWallet, toWallet string, amount float64) error {
 	return s.inTx(func(tx *sql.Tx) error {
+		if err := lockWallets(tx, fromWallet, toWallet); err != nil {
+			return err
+		}
 		if err := debit(tx, fromWallet, amount); err != nil {
 			return err
 		}
@@ -141,4 +144,12 @@ func credit(tx *sql.Tx, walletID string, amount float64) error {
 		return ErrWalletNotFound
 	}
 	return nil
+}
+
+func lockWallets(tx *sql.Tx, a, b string) error {
+	if a > b {
+		a, b = b, a
+	}
+	_, err := tx.Exec(`SELECT 1 FROM wallets WHERE wallet_id IN ($1, $2) ORDER BY wallet_id FOR UPDATE`, a, b)
+	return err
 }
