@@ -70,6 +70,18 @@ func balanceOf(t *testing.T, s *Store, id string) float64 {
 	return b
 }
 
+func checkLedger(t *testing.T, s *Store, id string) {
+	t.Helper()
+	balance := balanceOf(t, s, id)
+	ledger, err := s.SumBalanceFromTransactions(id)
+	if err != nil {
+		t.Fatalf("read ledger: %v", err)
+	}
+	if ledger != balance {
+		t.Errorf("wallet %s: ledger %.4f != balance %.4f", id, ledger, balance)
+	}
+}
+
 func runRace(ops []op) int {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -106,6 +118,7 @@ func TestConcurrentWithdraws(t *testing.T) {
 
 		successes := runRace(ops)
 		balance := balanceOf(t, s, wallet)
+		checkLedger(t, s, wallet)
 		if successes != 1 || balance != 0 {
 			t.Fatalf("round %d: want 1 withdrawal and balance 0, got %d and %.4f", round, successes, balance)
 		}
@@ -129,6 +142,8 @@ func TestWithdrawAndTransfer(t *testing.T) {
 
 		successes := runRace(ops)
 		from, to := balanceOf(t, s, src), balanceOf(t, s, dst)
+		checkLedger(t, s, src)
+		checkLedger(t, s, dst)
 		if successes != 1 || from != 0 {
 			t.Fatalf("round %d: want 1 op and source 0, got %d and %.4f (destination %.4f)", round, successes, from, to)
 		}
