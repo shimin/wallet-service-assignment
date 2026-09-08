@@ -4,16 +4,17 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/fundingpips/wallet-service/internal/money"
 	"github.com/fundingpips/wallet-service/internal/nats"
 	"github.com/fundingpips/wallet-service/internal/storage"
 	natsgo "github.com/nats-io/nats.go"
 )
 
 type DepositRequest struct {
-	RequestID string  `json:"request_id"`
-	WalletID  string  `json:"wallet_id"`
-	Amount    float64 `json:"amount"`
-	Currency  string  `json:"currency"`
+	RequestID string       `json:"request_id"`
+	WalletID  string       `json:"wallet_id"`
+	Amount    money.Amount `json:"amount"`
+	Currency  string       `json:"currency"`
 }
 
 func HandleDeposit(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {

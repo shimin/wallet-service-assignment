@@ -1,9 +1,6 @@
 package storage
 
-import (
-	"strconv"
-	"testing"
-)
+import "testing"
 
 func balanceText(t *testing.T, s *Store, id string) string {
 	t.Helper()
@@ -16,9 +13,9 @@ func balanceText(t *testing.T, s *Store, id string) string {
 
 func TestSubScaleDepositIsNotRoundedUp(t *testing.T) {
 	s := testStore(t)
-	wallet := newWallet(t, s, 0)
+	wallet := newWallet(t, s, toAmount("0"))
 
-	if err := s.Deposit(newUUID(), wallet, 0.00006); err != nil {
+	if err := s.Deposit(newUUID(), wallet, toAmount("0.00006")); err != nil {
 		t.Logf("deposit refused: %v", err)
 		return
 	}
@@ -29,9 +26,9 @@ func TestSubScaleDepositIsNotRoundedUp(t *testing.T) {
 
 func TestSubScaleWithdrawalCostsSomething(t *testing.T) {
 	s := testStore(t)
-	wallet := newWallet(t, s, 100)
+	wallet := newWallet(t, s, toAmount("100"))
 
-	if err := s.Withdraw(newUUID(), wallet, 0.00004); err != nil {
+	if err := s.Withdraw(newUUID(), wallet, toAmount("0.00004")); err != nil {
 		t.Logf("withdrawal refused: %v", err)
 		return
 	}
@@ -44,13 +41,8 @@ func TestLargeAmountsSurviveTheRoundTrip(t *testing.T) {
 	s := testStore(t)
 
 	for _, literal := range []string{"12345678901234.5678", "10000000000000.0001", "99999999999999.9999"} {
-		amount, err := strconv.ParseFloat(literal, 64) // what encoding/json does with the payload
-		if err != nil {
-			t.Fatalf("parse %s: %v", literal, err)
-		}
-
-		wallet := newWallet(t, s, 0)
-		if err := s.Deposit(newUUID(), wallet, amount); err != nil {
+		wallet := newWallet(t, s, toAmount("0"))
+		if err := s.Deposit(newUUID(), wallet, toAmount(literal)); err != nil {
 			t.Errorf("deposit %s: %v", literal, err) // rounded past the top of the column
 			continue
 		}

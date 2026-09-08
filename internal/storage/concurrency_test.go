@@ -9,10 +9,13 @@ import (
 	"testing"
 
 	"github.com/fundingpips/wallet-service/internal/config"
+	"github.com/fundingpips/wallet-service/internal/money"
 	"golang.org/x/sync/errgroup"
 )
 
 type op func(reqID string) error
+
+func toAmount(literal string) money.Amount { return money.MustParse(literal) }
 
 func testStore(t *testing.T) *Store {
 	t.Helper()
@@ -48,7 +51,7 @@ func newUUID() string {
 	return fmt.Sprintf("%08x-0000-4000-8000-%012x", os.Getpid(), walletSeq.Add(1))
 }
 
-func newWallet(t *testing.T, s *Store, initial float64) string {
+func newWallet(t *testing.T, s *Store, initial money.Amount) string {
 	t.Helper()
 	id := newUUID()
 	t.Cleanup(func() {
@@ -57,13 +60,19 @@ func newWallet(t *testing.T, s *Store, initial float64) string {
 		s.DB.Exec(`DELETE FROM transactions WHERE from_wallet = $1 OR to_wallet = $1`, id)
 		s.DB.Exec(`DELETE FROM wallets WHERE wallet_id = $1`, id)
 	})
+	if initial.IsZero() {
+		if _, err := s.DB.Exec(`INSERT INTO wallets (wallet_id, balance) VALUES ($1, 0)`, id); err != nil {
+			t.Fatalf("create wallet: %v", err)
+		}
+		return id
+	}
 	if err := s.Deposit(newUUID(), id, initial); err != nil {
 		t.Fatalf("create wallet: %v", err)
 	}
 	return id
 }
 
-func balanceOf(t *testing.T, s *Store, id string) float64 {
+func balanceOf(t *testing.T, s *Store, id string) money.Amount {
 	t.Helper()
 	b, _, err := s.GetWalletBalance(id)
 	if err != nil {
@@ -79,8 +88,8 @@ func checkLedger(t *testing.T, s *Store, id string) {
 	if err != nil {
 		t.Fatalf("read ledger: %v", err)
 	}
-	if ledger != balance {
-		t.Errorf("wallet %s: ledger %.4f != balance %.4f", id, ledger, balance)
+	if !ledger.Equal(balance) {
+		t.Errorf("wallet %s: ledger %s != balance %s", id, ledger, balance)
 	}
 }
 
@@ -109,17 +118,17 @@ func TestConcurrentWithdraws(t *testing.T) {
 	warmPool(t, s)
 
 	for round := range 5 {
-		wallet := newWallet(t, s, 100)
+		wallet := newWallet(t, s, toAmount("100"))
 		ops := make([]op, 20)
 		for i := range ops {
-			ops[i] = func(reqID string) error { return s.Withdraw(reqID, wallet, 100) }
+			ops[i] = func(reqID string) error { return s.Withdraw(reqID, wallet, toAmount("100")) }
 		}
 
 		successes, _ := runRace(ops)
 		balance := balanceOf(t, s, wallet)
 		checkLedger(t, s, wallet)
-		if successes != 1 || balance != 0 {
-			t.Fatalf("round %d: want 1 withdrawal and balance 0, got %d and %.4f", round, successes, balance)
+		if successes != 1 || !balance.IsZero() {
+			t.Fatalf("round %d: want 1 withdrawal and balance 0, got %d and %s", round, successes, balance)
 		}
 	}
 }
@@ -129,13 +138,13 @@ func TestWithdrawAndTransfer(t *testing.T) {
 	warmPool(t, s)
 
 	for round := range 5 {
-		src := newWallet(t, s, 100)
-		dst := newWallet(t, s, 100)
+		src := newWallet(t, s, toAmount("100"))
+		dst := newWallet(t, s, toAmount("100"))
 		ops := make([]op, 0, 20)
 		for range 10 {
 			ops = append(ops,
-				func(reqID string) error { return s.Withdraw(reqID, src, 100) },
-				func(reqID string) error { return s.Transfer(reqID, src, dst, 100) },
+				func(reqID string) error { return s.Withdraw(reqID, src, toAmount("100")) },
+				func(reqID string) error { return s.Transfer(reqID, src, dst, toAmount("100")) },
 			)
 		}
 
@@ -143,11 +152,11 @@ func TestWithdrawAndTransfer(t *testing.T) {
 		from, to := balanceOf(t, s, src), balanceOf(t, s, dst)
 		checkLedger(t, s, src)
 		checkLedger(t, s, dst)
-		if successes != 1 || from != 0 {
-			t.Fatalf("round %d: want 1 op and source 0, got %d and %.4f (destination %.4f)", round, successes, from, to)
+		if successes != 1 || !from.IsZero() {
+			t.Fatalf("round %d: want 1 op and source 0, got %d and %s (destination %s)", round, successes, from, to)
 		}
-		if to != 100 && to != 200 {
-			t.Fatalf("round %d: want destination 100 or 200, got %.4f", round, to)
+		if !to.Equal(toAmount("100")) && !to.Equal(toAmount("200")) {
+			t.Fatalf("round %d: want destination 100 or 200, got %s", round, to)
 		}
 	}
 }
@@ -157,21 +166,21 @@ func TestOppositeTransfers(t *testing.T) {
 	warmPool(t, s)
 
 	for round := range 3 {
-		a := newWallet(t, s, 1000)
-		b := newWallet(t, s, 1000)
+		a := newWallet(t, s, toAmount("1000"))
+		b := newWallet(t, s, toAmount("1000"))
 		ops := make([]op, 0, 20)
 		for range 10 {
 			ops = append(ops,
-				func(reqID string) error { return s.Transfer(reqID, a, b, 10) },
-				func(reqID string) error { return s.Transfer(reqID, b, a, 10) },
+				func(reqID string) error { return s.Transfer(reqID, a, b, toAmount("10")) },
+				func(reqID string) error { return s.Transfer(reqID, b, a, toAmount("10")) },
 			)
 		}
 
 		successes, firstErr := runRace(ops)
 		checkLedger(t, s, a)
 		checkLedger(t, s, b)
-		if total := balanceOf(t, s, a) + balanceOf(t, s, b); total != 2000 {
-			t.Fatalf("round %d: want total 2000, got %.4f", round, total)
+		if total := balanceOf(t, s, a).Add(balanceOf(t, s, b)); !total.Equal(toAmount("2000")) {
+			t.Fatalf("round %d: want total 2000, got %s", round, total)
 		}
 		if successes != len(ops) {
 			t.Fatalf("round %d: want all %d transfers to succeed, got %d (first error: %v)", round, len(ops), successes, firstErr)
@@ -181,12 +190,12 @@ func TestOppositeTransfers(t *testing.T) {
 
 func TestTransferToMissingWallet(t *testing.T) {
 	s := testStore(t)
-	src := newWallet(t, s, 100)
+	src := newWallet(t, s, toAmount("100"))
 
-	if err := s.Transfer(newUUID(), src, missingWalletID, 100); err == nil {
+	if err := s.Transfer(newUUID(), src, missingWalletID, toAmount("100")); err == nil {
 		t.Error("want an error transferring to a missing wallet, got nil")
 	}
-	if b := balanceOf(t, s, src); b != 100 {
-		t.Errorf("want source untouched at 100, got %.4f", b)
+	if b := balanceOf(t, s, src); !b.Equal(toAmount("100")) {
+		t.Errorf("want source untouched at 100, got %s", b)
 	}
 }

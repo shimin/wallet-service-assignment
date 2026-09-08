@@ -6,9 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
+	"github.com/fundingpips/wallet-service/internal/money"
 	_ "github.com/lib/pq"
 )
 
@@ -39,8 +39,8 @@ func (s *Store) Close() error {
 	return s.DB.Close()
 }
 
-func (s *Store) GetWalletBalance(walletID string) (float64, string, error) {
-	var balance float64
+func (s *Store) GetWalletBalance(walletID string) (money.Amount, string, error) {
+	var balance money.Amount
 	var currency string
 	err := s.DB.QueryRow(`SELECT balance, currency FROM wallets WHERE wallet_id = $1`, walletID).Scan(&balance, &currency)
 	return balance, currency, err
@@ -51,10 +51,6 @@ func (s *Store) GetWalletBalance(walletID string) (float64, string, error) {
 func fingerprint(parts ...string) string {
 	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
 	return hex.EncodeToString(sum[:])
-}
-
-func amountStr(amount float64) string {
-	return strconv.FormatFloat(amount, 'f', 4, 64)
 }
 
 // claimRequest reserves the request before any balance changes, so a concurrent
@@ -84,7 +80,7 @@ func claimRequest(tx *sql.Tx, requestID, operation, payload string) error {
 	return nil
 }
 
-func recordTx(tx *sql.Tx, requestID, operation string, fromWallet, toWallet *string, amount float64, status string) error {
+func recordTx(tx *sql.Tx, requestID, operation string, fromWallet, toWallet *string, amount money.Amount, status string) error {
 	_, err := tx.Exec(
 		`INSERT INTO transactions (request_id, operation, from_wallet, to_wallet, amount, status) VALUES ($1, $2, $3, $4, $5, $6)`,
 		requestID, operation, fromWallet, toWallet, amount, status,
@@ -92,9 +88,12 @@ func recordTx(tx *sql.Tx, requestID, operation string, fromWallet, toWallet *str
 	return err
 }
 
-func (s *Store) Deposit(requestID, walletID string, amount float64) error {
+func (s *Store) Deposit(requestID, walletID string, amount money.Amount) error {
+	if err := amount.Validate(); err != nil {
+		return err
+	}
 	return s.inTx(func(tx *sql.Tx) error {
-		if err := claimRequest(tx, requestID, "deposit", fingerprint("deposit", walletID, amountStr(amount))); err != nil {
+		if err := claimRequest(tx, requestID, "deposit", fingerprint("deposit", walletID, amount.String())); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`
@@ -109,9 +108,12 @@ func (s *Store) Deposit(requestID, walletID string, amount float64) error {
 	})
 }
 
-func (s *Store) Withdraw(requestID, walletID string, amount float64) error {
+func (s *Store) Withdraw(requestID, walletID string, amount money.Amount) error {
+	if err := amount.Validate(); err != nil {
+		return err
+	}
 	return s.inTx(func(tx *sql.Tx) error {
-		if err := claimRequest(tx, requestID, "withdraw", fingerprint("withdraw", walletID, amountStr(amount))); err != nil {
+		if err := claimRequest(tx, requestID, "withdraw", fingerprint("withdraw", walletID, amount.String())); err != nil {
 			return err
 		}
 		if err := debit(tx, walletID, amount); err != nil {
@@ -121,9 +123,12 @@ func (s *Store) Withdraw(requestID, walletID string, amount float64) error {
 	})
 }
 
-func (s *Store) Transfer(requestID, fromWallet, toWallet string, amount float64) error {
+func (s *Store) Transfer(requestID, fromWallet, toWallet string, amount money.Amount) error {
+	if err := amount.Validate(); err != nil {
+		return err
+	}
 	return s.inTx(func(tx *sql.Tx) error {
-		if err := claimRequest(tx, requestID, "transfer", fingerprint("transfer", fromWallet, toWallet, amountStr(amount))); err != nil {
+		if err := claimRequest(tx, requestID, "transfer", fingerprint("transfer", fromWallet, toWallet, amount.String())); err != nil {
 			return err
 		}
 		if err := lockWallets(tx, fromWallet, toWallet); err != nil {
@@ -139,8 +144,8 @@ func (s *Store) Transfer(requestID, fromWallet, toWallet string, amount float64)
 	})
 }
 
-func (s *Store) SumBalanceFromTransactions(walletID string) (float64, error) {
-	var balance float64
+func (s *Store) SumBalanceFromTransactions(walletID string) (money.Amount, error) {
+	var balance money.Amount
 	err := s.DB.QueryRow(`
 		SELECT COALESCE(
 			SUM(CASE WHEN to_wallet = $1 THEN amount ELSE 0 END) -
@@ -163,7 +168,7 @@ func (s *Store) inTx(fn func(*sql.Tx) error) error {
 	return tx.Commit()
 }
 
-func debit(tx *sql.Tx, walletID string, amount float64) error {
+func debit(tx *sql.Tx, walletID string, amount money.Amount) error {
 	res, err := tx.Exec(`
 		UPDATE wallets SET balance = balance - $1, updated_at = NOW()
 		WHERE wallet_id = $2 AND balance >= $1
@@ -181,7 +186,7 @@ func debit(tx *sql.Tx, walletID string, amount float64) error {
 	return nil
 }
 
-func credit(tx *sql.Tx, walletID string, amount float64) error {
+func credit(tx *sql.Tx, walletID string, amount money.Amount) error {
 	res, err := tx.Exec(`
 		UPDATE wallets SET balance = balance + $1, updated_at = NOW()
 		WHERE wallet_id = $2
