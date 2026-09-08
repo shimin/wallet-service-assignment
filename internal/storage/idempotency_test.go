@@ -76,6 +76,31 @@ func TestRetriedRequestAppliedOnce(t *testing.T) {
 	})
 }
 
+func TestConcurrentRetriesOfSameTransfer(t *testing.T) {
+	s := testStore(t)
+	warmPool(t, s)
+
+	for round := range 5 {
+		src, dst := newWallet(t, s, 1000), newWallet(t, s, 1000)
+		reqID := newUUID()
+		ops := make([]op, 20)
+		for i := range ops {
+			ops[i] = func(string) error { return s.Transfer(reqID, src, dst, 100) }
+		}
+
+		successes, _ := runRace(ops)
+		from, to := balanceOf(t, s, src), balanceOf(t, s, dst)
+		checkLedger(t, s, src)
+		checkLedger(t, s, dst)
+		if successes != 1 || from != 900 || to != 1100 {
+			t.Fatalf("round %d: want 1 transfer and 900/1100, got %d and %.4f/%.4f", round, successes, from, to)
+		}
+		if n := txCount(t, s, reqID); n != 1 {
+			t.Fatalf("round %d: want 1 ledger row for the request, got %d", round, n)
+		}
+	}
+}
+
 func TestConcurrentRetriesOfSameRequest(t *testing.T) {
 	s := testStore(t)
 	warmPool(t, s)

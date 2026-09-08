@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/lib/pq v1.12.3
 	github.com/nats-io/nats.go v1.52.0
+	golang.org/x/sync v0.22.0
 )
 
 require (

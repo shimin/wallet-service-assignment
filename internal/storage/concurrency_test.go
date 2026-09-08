@@ -5,11 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/fundingpips/wallet-service/internal/config"
+	"golang.org/x/sync/errgroup"
 )
 
 type op func(reqID string) error
@@ -83,31 +83,23 @@ func checkLedger(t *testing.T, s *Store, id string) {
 }
 
 func runRace(ops []op) (int, error) {
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	successes := 0
-	var firstErr error
+	var g errgroup.Group
+	var successes atomic.Int64
 	start := make(chan struct{})
 
 	for _, o := range ops {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		g.Go(func() error {
 			<-start
-			err := o(newUUID())
-			mu.Lock()
-			switch {
-			case err == nil:
-				successes++
-			case firstErr == nil:
-				firstErr = err
+			if err := o(newUUID()); err != nil {
+				return err
 			}
-			mu.Unlock()
-		}()
+			successes.Add(1)
+			return nil
+		})
 	}
 	close(start)
-	wg.Wait()
-	return successes, firstErr
+	err := g.Wait()
+	return int(successes.Load()), err
 }
 
 func TestConcurrentWithdraws(t *testing.T) {
