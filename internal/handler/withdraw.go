@@ -14,7 +14,12 @@ type WithdrawRequest struct {
 	Currency  string       `json:"currency"`
 }
 
-func (r WithdrawRequest) validate() error { return r.Amount.Validate() }
+func (r WithdrawRequest) validate() error {
+	if err := r.Amount.Validate(); err != nil {
+		return err
+	}
+	return validateCurrency(r.Currency)
+}
 
 func HandleWithdraw(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
 	return func(msg *natsgo.Msg) {
@@ -23,6 +28,6 @@ func HandleWithdraw(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
 			return
 		}
 
-		publishResult(nc, req.RequestID, "withdraw", store.Withdraw(req.RequestID, req.WalletID, req.Amount))
+		publishResult(nc, req.RequestID, "withdraw", store.Withdraw(req.RequestID, req.WalletID, req.Amount, req.Currency))
 	}
 }

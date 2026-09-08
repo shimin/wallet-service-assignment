@@ -14,7 +14,12 @@ type DepositRequest struct {
 	Currency  string       `json:"currency"`
 }
 
-func (r DepositRequest) validate() error { return r.Amount.Validate() }
+func (r DepositRequest) validate() error {
+	if err := r.Amount.Validate(); err != nil {
+		return err
+	}
+	return validateCurrency(r.Currency)
+}
 
 func HandleDeposit(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
 	return func(msg *natsgo.Msg) {
@@ -23,6 +28,6 @@ func HandleDeposit(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
 			return
 		}
 
-		publishResult(nc, req.RequestID, "deposit", store.Deposit(req.RequestID, req.WalletID, req.Amount))
+		publishResult(nc, req.RequestID, "deposit", store.Deposit(req.RequestID, req.WalletID, req.Amount, req.Currency))
 	}
 }

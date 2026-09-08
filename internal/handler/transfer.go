@@ -15,7 +15,12 @@ type TransferRequest struct {
 	Currency     string       `json:"currency"`
 }
 
-func (r TransferRequest) validate() error { return r.Amount.Validate() }
+func (r TransferRequest) validate() error {
+	if err := r.Amount.Validate(); err != nil {
+		return err
+	}
+	return validateCurrency(r.Currency)
+}
 
 func HandleTransfer(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
 	return func(msg *natsgo.Msg) {
@@ -24,6 +29,6 @@ func HandleTransfer(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
 			return
 		}
 
-		publishResult(nc, req.RequestID, "transfer", store.Transfer(req.RequestID, req.FromWalletID, req.ToWalletID, req.Amount))
+		publishResult(nc, req.RequestID, "transfer", store.Transfer(req.RequestID, req.FromWalletID, req.ToWalletID, req.Amount, req.Currency))
 	}
 }

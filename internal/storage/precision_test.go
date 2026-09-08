@@ -20,7 +20,7 @@ func TestDepositFinerThanScaleIsRefused(t *testing.T) {
 	s := testStore(t)
 	wallet := newWallet(t, s, toAmount("0"))
 
-	if err := s.Deposit(newUUID(), wallet, toAmount("0.00006")); !errors.Is(err, money.ErrScale) {
+	if err := s.Deposit(newUUID(), wallet, toAmount("0.00006"), ""); !errors.Is(err, money.ErrScale) {
 		t.Fatalf("want ErrScale, got %v", err)
 	}
 	if b := balanceText(t, s, wallet); b != "0.0000" {
@@ -33,7 +33,7 @@ func TestWithdrawalFinerThanScaleIsRefused(t *testing.T) {
 	s := testStore(t)
 	wallet := newWallet(t, s, toAmount("100"))
 
-	if err := s.Withdraw(newUUID(), wallet, toAmount("0.00004")); !errors.Is(err, money.ErrScale) {
+	if err := s.Withdraw(newUUID(), wallet, toAmount("0.00004"), ""); !errors.Is(err, money.ErrScale) {
 		t.Fatalf("want ErrScale, got %v", err)
 	}
 	if b := balanceText(t, s, wallet); b != "100.0000" {
@@ -47,7 +47,7 @@ func TestLargeAmountsSurviveTheRoundTrip(t *testing.T) {
 
 	for _, literal := range []string{"12345678901234.5678", "10000000000000.0001", "99999999999999.9999"} {
 		wallet := newWallet(t, s, toAmount("0"))
-		if err := s.Deposit(newUUID(), wallet, toAmount(literal)); err != nil {
+		if err := s.Deposit(newUUID(), wallet, toAmount(literal), ""); err != nil {
 			t.Errorf("deposit %s: %v", literal, err)
 			continue
 		}
@@ -63,7 +63,7 @@ func TestSmallestAmountsAccumulateExactly(t *testing.T) {
 	wallet := newWallet(t, s, toAmount("0.0001"))
 
 	for range 9 {
-		if err := s.Deposit(newUUID(), wallet, toAmount("0.0001")); err != nil {
+		if err := s.Deposit(newUUID(), wallet, toAmount("0.0001"), ""); err != nil {
 			t.Fatalf("deposit: %v", err)
 		}
 	}

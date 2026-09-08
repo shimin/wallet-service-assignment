@@ -1,6 +1,6 @@
 -- Idempotency gate for deployments that predate it. Creates an empty table and
 -- touches nothing else: no lock on transactions, no change to existing rows.
--- Apply before deploying the service. Rationale: readme_idempotency.md
+-- Apply before deploying the service.
 --
 --   psql "$PG_URL" -v ON_ERROR_STOP=1 -f migrations/0002_requests.sql
 

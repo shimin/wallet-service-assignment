@@ -66,7 +66,7 @@ func newWallet(t *testing.T, s *Store, initial money.Amount) string {
 		}
 		return id
 	}
-	if err := s.Deposit(newUUID(), id, initial); err != nil {
+	if err := s.Deposit(newUUID(), id, initial, ""); err != nil {
 		t.Fatalf("create wallet: %v", err)
 	}
 	return id
@@ -121,7 +121,7 @@ func TestConcurrentWithdraws(t *testing.T) {
 		wallet := newWallet(t, s, toAmount("100"))
 		ops := make([]op, 20)
 		for i := range ops {
-			ops[i] = func(reqID string) error { return s.Withdraw(reqID, wallet, toAmount("100")) }
+			ops[i] = func(reqID string) error { return s.Withdraw(reqID, wallet, toAmount("100"), "") }
 		}
 
 		successes, _ := runRace(ops)
@@ -143,8 +143,8 @@ func TestWithdrawAndTransfer(t *testing.T) {
 		ops := make([]op, 0, 20)
 		for range 10 {
 			ops = append(ops,
-				func(reqID string) error { return s.Withdraw(reqID, src, toAmount("100")) },
-				func(reqID string) error { return s.Transfer(reqID, src, dst, toAmount("100")) },
+				func(reqID string) error { return s.Withdraw(reqID, src, toAmount("100"), "") },
+				func(reqID string) error { return s.Transfer(reqID, src, dst, toAmount("100"), "") },
 			)
 		}
 
@@ -171,8 +171,8 @@ func TestOppositeTransfers(t *testing.T) {
 		ops := make([]op, 0, 20)
 		for range 10 {
 			ops = append(ops,
-				func(reqID string) error { return s.Transfer(reqID, a, b, toAmount("10")) },
-				func(reqID string) error { return s.Transfer(reqID, b, a, toAmount("10")) },
+				func(reqID string) error { return s.Transfer(reqID, a, b, toAmount("10"), "") },
+				func(reqID string) error { return s.Transfer(reqID, b, a, toAmount("10"), "") },
 			)
 		}
 
@@ -192,7 +192,7 @@ func TestTransferToMissingWallet(t *testing.T) {
 	s := testStore(t)
 	src := newWallet(t, s, toAmount("100"))
 
-	if err := s.Transfer(newUUID(), src, missingWalletID, toAmount("100")); err == nil {
+	if err := s.Transfer(newUUID(), src, missingWalletID, toAmount("100"), ""); err == nil {
 		t.Error("want an error transferring to a missing wallet, got nil")
 	}
 	if b := balanceOf(t, s, src); !b.Equal(toAmount("100")) {

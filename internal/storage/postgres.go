@@ -20,6 +20,8 @@ var (
 	ErrCurrencyMismatch  = errors.New("wallet currency does not match")
 )
 
+const defaultCurrency = "USD"
+
 type Store struct {
 	DB *sql.DB
 }
@@ -89,32 +91,42 @@ func recordTx(tx *sql.Tx, requestID, operation string, fromWallet, toWallet *str
 	return err
 }
 
-func (s *Store) Deposit(requestID, walletID string, amount money.Amount) error {
+func (s *Store) Deposit(requestID, walletID string, amount money.Amount, currency string) error {
 	if err := amount.Validate(); err != nil {
 		return err
 	}
 	return s.inTx(func(tx *sql.Tx) error {
-		if err := claimRequest(tx, requestID, "deposit", fingerprint("deposit", walletID, amount.String())); err != nil {
+		if err := claimRequest(tx, requestID, "deposit", fingerprint("deposit", walletID, amount.String(), currency)); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`
-			INSERT INTO wallets (wallet_id, balance)
-			VALUES ($1, $2)
+		res, err := tx.Exec(`
+			INSERT INTO wallets (wallet_id, balance, currency)
+			VALUES ($1, $2, COALESCE(NULLIF($3, ''), $4))
 			ON CONFLICT (wallet_id)
 			DO UPDATE SET balance = wallets.balance + EXCLUDED.balance, updated_at = NOW()
-		`, walletID, amount); err != nil {
+			WHERE $3 = '' OR wallets.currency = $3
+		`, walletID, amount, currency, defaultCurrency)
+		if err != nil {
 			return err
+		}
+		if affected, err := res.RowsAffected(); err != nil {
+			return err
+		} else if affected == 0 {
+			return ErrCurrencyMismatch
 		}
 		return recordTx(tx, requestID, "deposit", nil, &walletID, amount, "completed")
 	})
 }
 
-func (s *Store) Withdraw(requestID, walletID string, amount money.Amount) error {
+func (s *Store) Withdraw(requestID, walletID string, amount money.Amount, currency string) error {
 	if err := amount.Validate(); err != nil {
 		return err
 	}
 	return s.inTx(func(tx *sql.Tx) error {
-		if err := claimRequest(tx, requestID, "withdraw", fingerprint("withdraw", walletID, amount.String())); err != nil {
+		if err := claimRequest(tx, requestID, "withdraw", fingerprint("withdraw", walletID, amount.String(), currency)); err != nil {
+			return err
+		}
+		if err := requireCurrency(tx, walletID, currency); err != nil {
 			return err
 		}
 		if err := debit(tx, walletID, amount); err != nil {
@@ -124,18 +136,21 @@ func (s *Store) Withdraw(requestID, walletID string, amount money.Amount) error 
 	})
 }
 
-func (s *Store) Transfer(requestID, fromWallet, toWallet string, amount money.Amount) error {
+func (s *Store) Transfer(requestID, fromWallet, toWallet string, amount money.Amount, currency string) error {
 	if err := amount.Validate(); err != nil {
 		return err
 	}
 	return s.inTx(func(tx *sql.Tx) error {
-		if err := claimRequest(tx, requestID, "transfer", fingerprint("transfer", fromWallet, toWallet, amount.String())); err != nil {
+		if err := claimRequest(tx, requestID, "transfer", fingerprint("transfer", fromWallet, toWallet, amount.String(), currency)); err != nil {
 			return err
 		}
 		if err := lockWallets(tx, fromWallet, toWallet); err != nil {
 			return err
 		}
 		if err := requireSameCurrency(tx, fromWallet, toWallet); err != nil {
+			return err
+		}
+		if err := requireCurrency(tx, fromWallet, currency); err != nil {
 			return err
 		}
 		if err := debit(tx, fromWallet, amount); err != nil {
@@ -204,6 +219,22 @@ func credit(tx *sql.Tx, walletID string, amount money.Amount) error {
 	}
 	if affected == 0 {
 		return ErrWalletNotFound
+	}
+	return nil
+}
+
+func requireCurrency(tx *sql.Tx, walletID, currency string) error {
+	if currency == "" {
+		return nil
+	}
+	var actual string
+	switch err := tx.QueryRow(`SELECT currency FROM wallets WHERE wallet_id = $1`, walletID).Scan(&actual); {
+	case errors.Is(err, sql.ErrNoRows):
+		return ErrWalletNotFound
+	case err != nil:
+		return err
+	case actual != currency:
+		return ErrCurrencyMismatch
 	}
 	return nil
 }
