@@ -1,5 +1,7 @@
 # Senior Backend Developer — Take-Home Assignment
 
+> Write-up: [solution.md](solution.md) — ru version: [solution_ru.md](solution_ru.md)
+
 ## Overview
 
 You've just inherited `wallet-service` — a Go service that manages user balances and processes
