@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS wallets (
 CREATE TABLE IF NOT EXISTS requests (
     request_id UUID PRIMARY KEY,
     operation VARCHAR(20) NOT NULL,
+    payload_fingerprint TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 

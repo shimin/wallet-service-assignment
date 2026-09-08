@@ -1,9 +1,13 @@
 package storage
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	_ "github.com/lib/pq"
 )
@@ -12,6 +16,7 @@ var (
 	ErrInsufficientFunds = errors.New("insufficient funds")
 	ErrWalletNotFound    = errors.New("wallet not found")
 	ErrDuplicateRequest  = errors.New("duplicate request")
+	ErrRequestConflict   = errors.New("request id reused with a different payload")
 )
 
 type Store struct {
@@ -41,12 +46,23 @@ func (s *Store) GetWalletBalance(walletID string) (float64, string, error) {
 	return balance, currency, err
 }
 
+// fingerprint identifies what an operation applies, so a request id reused with
+// different values can be told apart from a retry of the same one.
+func fingerprint(parts ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
+	return hex.EncodeToString(sum[:])
+}
+
+func amountStr(amount float64) string {
+	return strconv.FormatFloat(amount, 'f', 4, 64)
+}
+
 // claimRequest reserves the request before any balance changes, so a concurrent
 // retry blocks on the primary key until the first attempt commits or rolls back.
-func claimRequest(tx *sql.Tx, requestID, operation string) error {
+func claimRequest(tx *sql.Tx, requestID, operation, payload string) error {
 	res, err := tx.Exec(
-		`INSERT INTO requests (request_id, operation) VALUES ($1, $2) ON CONFLICT (request_id) DO NOTHING`,
-		requestID, operation,
+		`INSERT INTO requests (request_id, operation, payload_fingerprint) VALUES ($1, $2, $3) ON CONFLICT (request_id) DO NOTHING`,
+		requestID, operation, payload,
 	)
 	if err != nil {
 		return err
@@ -56,6 +72,13 @@ func claimRequest(tx *sql.Tx, requestID, operation string) error {
 		return err
 	}
 	if affected == 0 {
+		var claimed string
+		if err := tx.QueryRow(`SELECT payload_fingerprint FROM requests WHERE request_id = $1`, requestID).Scan(&claimed); err != nil {
+			return err
+		}
+		if claimed != payload {
+			return ErrRequestConflict
+		}
 		return ErrDuplicateRequest
 	}
 	return nil
@@ -71,7 +94,7 @@ func recordTx(tx *sql.Tx, requestID, operation string, fromWallet, toWallet *str
 
 func (s *Store) Deposit(requestID, walletID string, amount float64) error {
 	return s.inTx(func(tx *sql.Tx) error {
-		if err := claimRequest(tx, requestID, "deposit"); err != nil {
+		if err := claimRequest(tx, requestID, "deposit", fingerprint("deposit", walletID, amountStr(amount))); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`
@@ -88,7 +111,7 @@ func (s *Store) Deposit(requestID, walletID string, amount float64) error {
 
 func (s *Store) Withdraw(requestID, walletID string, amount float64) error {
 	return s.inTx(func(tx *sql.Tx) error {
-		if err := claimRequest(tx, requestID, "withdraw"); err != nil {
+		if err := claimRequest(tx, requestID, "withdraw", fingerprint("withdraw", walletID, amountStr(amount))); err != nil {
 			return err
 		}
 		if err := debit(tx, walletID, amount); err != nil {
@@ -100,7 +123,7 @@ func (s *Store) Withdraw(requestID, walletID string, amount float64) error {
 
 func (s *Store) Transfer(requestID, fromWallet, toWallet string, amount float64) error {
 	return s.inTx(func(tx *sql.Tx) error {
-		if err := claimRequest(tx, requestID, "transfer"); err != nil {
+		if err := claimRequest(tx, requestID, "transfer", fingerprint("transfer", fromWallet, toWallet, amountStr(amount))); err != nil {
 			return err
 		}
 		if err := lockWallets(tx, fromWallet, toWallet); err != nil {
