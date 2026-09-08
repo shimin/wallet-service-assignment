@@ -1,6 +1,11 @@
 package storage
 
-import "testing"
+import (
+	"errors"
+	"testing"
+
+	"github.com/fundingpips/wallet-service/internal/money"
+)
 
 func balanceText(t *testing.T, s *Store, id string) string {
 	t.Helper()
@@ -11,30 +16,30 @@ func balanceText(t *testing.T, s *Store, id string) string {
 	return balance
 }
 
-func TestSubScaleDepositIsNotRoundedUp(t *testing.T) {
+func TestDepositFinerThanScaleIsRefused(t *testing.T) {
 	s := testStore(t)
 	wallet := newWallet(t, s, toAmount("0"))
 
-	if err := s.Deposit(newUUID(), wallet, toAmount("0.00006")); err != nil {
-		t.Logf("deposit refused: %v", err)
-		return
+	if err := s.Deposit(newUUID(), wallet, toAmount("0.00006")); !errors.Is(err, money.ErrScale) {
+		t.Fatalf("want ErrScale, got %v", err)
 	}
-	if b := balanceText(t, s, wallet); b != "0.00006" {
-		t.Errorf("deposited 0.00006, wallet holds %s", b)
+	if b := balanceText(t, s, wallet); b != "0.0000" {
+		t.Errorf("deposit refused, wallet holds %s", b)
 	}
+	checkLedger(t, s, wallet)
 }
 
-func TestSubScaleWithdrawalCostsSomething(t *testing.T) {
+func TestWithdrawalFinerThanScaleIsRefused(t *testing.T) {
 	s := testStore(t)
 	wallet := newWallet(t, s, toAmount("100"))
 
-	if err := s.Withdraw(newUUID(), wallet, toAmount("0.00004")); err != nil {
-		t.Logf("withdrawal refused: %v", err)
-		return
+	if err := s.Withdraw(newUUID(), wallet, toAmount("0.00004")); !errors.Is(err, money.ErrScale) {
+		t.Fatalf("want ErrScale, got %v", err)
 	}
-	if b := balanceText(t, s, wallet); b == "100.0000" {
-		t.Errorf("withdrew 0.00004, balance is still %s", b)
+	if b := balanceText(t, s, wallet); b != "100.0000" {
+		t.Errorf("withdrawal refused, wallet holds %s", b)
 	}
+	checkLedger(t, s, wallet)
 }
 
 func TestLargeAmountsSurviveTheRoundTrip(t *testing.T) {
@@ -43,11 +48,28 @@ func TestLargeAmountsSurviveTheRoundTrip(t *testing.T) {
 	for _, literal := range []string{"12345678901234.5678", "10000000000000.0001", "99999999999999.9999"} {
 		wallet := newWallet(t, s, toAmount("0"))
 		if err := s.Deposit(newUUID(), wallet, toAmount(literal)); err != nil {
-			t.Errorf("deposit %s: %v", literal, err) // rounded past the top of the column
+			t.Errorf("deposit %s: %v", literal, err)
 			continue
 		}
 		if b := balanceText(t, s, wallet); b != literal {
 			t.Errorf("deposited %s, wallet holds %s", literal, b)
 		}
+		checkLedger(t, s, wallet)
 	}
+}
+
+func TestSmallestAmountsAccumulateExactly(t *testing.T) {
+	s := testStore(t)
+	wallet := newWallet(t, s, toAmount("0.0001"))
+
+	for range 9 {
+		if err := s.Deposit(newUUID(), wallet, toAmount("0.0001")); err != nil {
+			t.Fatalf("deposit: %v", err)
+		}
+	}
+
+	if b := balanceText(t, s, wallet); b != "0.0010" {
+		t.Errorf("want 0.0010 after ten deposits of 0.0001, got %s", b)
+	}
+	checkLedger(t, s, wallet)
 }
