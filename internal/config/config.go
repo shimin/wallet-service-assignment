@@ -1,22 +1,22 @@
 package config
 
-import "os"
+import (
+	"errors"
+	"os"
+)
 
 type Config struct {
 	NATSUrl string
 	PGUrl   string
 }
 
-func Load() Config {
-	return Config{
-		NATSUrl: getEnv("NATS_URL", "nats://localhost:4222"),
-		PGUrl:   getEnv("PG_URL", "postgres://walletuser:walletpass@localhost:5432/wallet?sslmode=disable"),
+func Load() (Config, error) {
+	cfg := Config{
+		NATSUrl: os.Getenv("NATS_URL"),
+		PGUrl:   os.Getenv("PG_URL"),
 	}
-}
-
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+	if cfg.NATSUrl == "" || cfg.PGUrl == "" {
+		return Config{}, errors.New("NATS_URL and PG_URL must be set")
 	}
-	return fallback
+	return cfg, nil
 }

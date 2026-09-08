@@ -113,15 +113,17 @@ Docker and run the service from your shell:
 
 ```bash
 docker-compose up -d nats postgres
+set -a; source .env; set +a
 go run ./cmd/wallet-service
 ```
 
 (Stop the containerised service first — `docker-compose stop wallet-service` — so you don't have two
 instances processing the same subjects.)
 
-The service reads its configuration from environment variables (see `.env` for defaults — `NATS_URL`,
-`PG_URL`). Inside Compose these point at the `nats` and `postgres` service names; running locally they
-fall back to `localhost`.
+The service reads its configuration from environment variables — `NATS_URL` and `PG_URL`. Both are
+required: if either is missing the service exits at startup rather than falling back to a built-in
+default. `.env` holds the values for a local run, which is what the `source` line above loads; inside
+Compose they are set to the `nats` and `postgres` service names by `docker-compose.yml`.
 
 ### Database Schema
 

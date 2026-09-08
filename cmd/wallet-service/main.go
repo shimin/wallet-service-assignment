@@ -13,7 +13,11 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Println("config:", err)
+		os.Exit(1)
+	}
 
 	store, err := storage.NewStore(cfg.PGUrl)
 	if err != nil {

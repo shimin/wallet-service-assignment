@@ -102,6 +102,13 @@ There is no history of balance changes, failed operations were never recorded at
 
    7\.4\. The currency went into payload_fingerprint - otherwise a retry with the same request_id and a different currency reads as an honest retry
 
+8. The config filled in defaults silently: with NATS_URL and PG_URL empty the service went to localhost with dev credentials baked into the code. In production a lost environment variable would not stop the service, it would send it somewhere else. Load() now returns an error, main exits on it at startup, and the docker-compose credentials moved into the test fixture - go test still runs without any environment variables, while running the service locally needs them set:
+
+   ```bash
+   set -a; source .env; set +a
+   go run ./cmd/wallet-service
+   ```
+
 ## Contract changes
 
 The message schema did not change: amount is still a JSON number, and so is balance in the wallet.balance response (printed as 150.0000). But the behaviour at the boundary did, and it is worth checking against the senders before a rollout:

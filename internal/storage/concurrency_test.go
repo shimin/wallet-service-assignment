@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/fundingpips/wallet-service/internal/config"
 	"github.com/fundingpips/wallet-service/internal/money"
 	"golang.org/x/sync/errgroup"
 )
@@ -17,9 +16,17 @@ type op func(reqID string) error
 
 func toAmount(literal string) money.Amount { return money.MustParse(literal) }
 
+// Defaults to what docker-compose serves; override with PG_URL.
+func pgURL() string {
+	if v := os.Getenv("PG_URL"); v != "" {
+		return v
+	}
+	return "postgres://walletuser:walletpass@localhost:5432/wallet?sslmode=disable"
+}
+
 func testStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := NewStore(config.Load().PGUrl)
+	s, err := NewStore(pgURL())
 	if err != nil {
 		t.Skipf("postgres unavailable: %v", err)
 	}
