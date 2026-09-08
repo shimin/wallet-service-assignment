@@ -1,9 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
-	"fmt"
-
 	"github.com/fundingpips/wallet-service/internal/money"
 	"github.com/fundingpips/wallet-service/internal/nats"
 	"github.com/fundingpips/wallet-service/internal/storage"
@@ -17,11 +14,12 @@ type DepositRequest struct {
 	Currency  string       `json:"currency"`
 }
 
+func (r DepositRequest) validate() error { return r.Amount.Validate() }
+
 func HandleDeposit(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
 	return func(msg *natsgo.Msg) {
 		var req DepositRequest
-		if err := json.Unmarshal(msg.Data, &req); err != nil {
-			fmt.Println("deposit: bad payload:", err)
+		if !parse(nc, msg, "deposit", &req) {
 			return
 		}
 

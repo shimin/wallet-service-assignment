@@ -1,9 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
-	"fmt"
-
 	"github.com/fundingpips/wallet-service/internal/money"
 	"github.com/fundingpips/wallet-service/internal/nats"
 	"github.com/fundingpips/wallet-service/internal/storage"
@@ -17,11 +14,12 @@ type WithdrawRequest struct {
 	Currency  string       `json:"currency"`
 }
 
+func (r WithdrawRequest) validate() error { return r.Amount.Validate() }
+
 func HandleWithdraw(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
 	return func(msg *natsgo.Msg) {
 		var req WithdrawRequest
-		if err := json.Unmarshal(msg.Data, &req); err != nil {
-			fmt.Println("withdraw: bad payload:", err)
+		if !parse(nc, msg, "withdraw", &req) {
 			return
 		}
 
