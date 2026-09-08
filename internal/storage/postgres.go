@@ -17,6 +17,7 @@ var (
 	ErrWalletNotFound    = errors.New("wallet not found")
 	ErrDuplicateRequest  = errors.New("duplicate request")
 	ErrRequestConflict   = errors.New("request id reused with a different payload")
+	ErrCurrencyMismatch  = errors.New("wallet currency does not match")
 )
 
 type Store struct {
@@ -134,6 +135,9 @@ func (s *Store) Transfer(requestID, fromWallet, toWallet string, amount money.Am
 		if err := lockWallets(tx, fromWallet, toWallet); err != nil {
 			return err
 		}
+		if err := requireSameCurrency(tx, fromWallet, toWallet); err != nil {
+			return err
+		}
 		if err := debit(tx, fromWallet, amount); err != nil {
 			return err
 		}
@@ -200,6 +204,17 @@ func credit(tx *sql.Tx, walletID string, amount money.Amount) error {
 	}
 	if affected == 0 {
 		return ErrWalletNotFound
+	}
+	return nil
+}
+
+func requireSameCurrency(tx *sql.Tx, a, b string) error {
+	var distinct int
+	if err := tx.QueryRow(`SELECT COUNT(DISTINCT currency) FROM wallets WHERE wallet_id IN ($1, $2)`, a, b).Scan(&distinct); err != nil {
+		return err
+	}
+	if distinct > 1 {
+		return ErrCurrencyMismatch
 	}
 	return nil
 }
