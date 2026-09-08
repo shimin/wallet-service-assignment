@@ -24,12 +24,6 @@ func HandleDeposit(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
 			return
 		}
 
-		if err := store.Deposit(req.RequestID, req.WalletID, req.Amount); err != nil {
-			fmt.Println("deposit failed:", err)
-			publishFailed(nc, req.RequestID, "deposit", err.Error())
-			return
-		}
-
-		publishCompleted(nc, req.RequestID, "deposit")
+		publishResult(nc, req.RequestID, "deposit", store.Deposit(req.RequestID, req.WalletID, req.Amount))
 	}
 }

@@ -24,12 +24,6 @@ func HandleWithdraw(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
 			return
 		}
 
-		if err := store.Withdraw(req.RequestID, req.WalletID, req.Amount); err != nil {
-			fmt.Println("withdraw failed:", err)
-			publishFailed(nc, req.RequestID, "withdraw", err.Error())
-			return
-		}
-
-		publishCompleted(nc, req.RequestID, "withdraw")
+		publishResult(nc, req.RequestID, "withdraw", store.Withdraw(req.RequestID, req.WalletID, req.Amount))
 	}
 }

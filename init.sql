@@ -6,6 +6,12 @@ CREATE TABLE IF NOT EXISTS wallets (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS requests (
+    request_id UUID PRIMARY KEY,
+    operation VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
     id SERIAL PRIMARY KEY,
     request_id UUID,

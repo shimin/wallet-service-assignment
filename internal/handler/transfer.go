@@ -25,12 +25,6 @@ func HandleTransfer(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
 			return
 		}
 
-		if err := store.Transfer(req.RequestID, req.FromWalletID, req.ToWalletID, req.Amount); err != nil {
-			fmt.Println("transfer failed:", err)
-			publishFailed(nc, req.RequestID, "transfer", err.Error())
-			return
-		}
-
-		publishCompleted(nc, req.RequestID, "transfer")
+		publishResult(nc, req.RequestID, "transfer", store.Transfer(req.RequestID, req.FromWalletID, req.ToWalletID, req.Amount))
 	}
 }

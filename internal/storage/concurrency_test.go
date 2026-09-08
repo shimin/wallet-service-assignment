@@ -52,6 +52,8 @@ func newWallet(t *testing.T, s *Store, initial float64) string {
 	t.Helper()
 	id := newUUID()
 	t.Cleanup(func() {
+		s.DB.Exec(`DELETE FROM requests WHERE request_id IN (
+			SELECT request_id FROM transactions WHERE from_wallet = $1 OR to_wallet = $1)`, id)
 		s.DB.Exec(`DELETE FROM transactions WHERE from_wallet = $1 OR to_wallet = $1`, id)
 		s.DB.Exec(`DELETE FROM wallets WHERE wallet_id = $1`, id)
 	})

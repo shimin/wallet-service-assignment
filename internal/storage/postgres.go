@@ -11,6 +11,7 @@ import (
 var (
 	ErrInsufficientFunds = errors.New("insufficient funds")
 	ErrWalletNotFound    = errors.New("wallet not found")
+	ErrDuplicateRequest  = errors.New("duplicate request")
 )
 
 type Store struct {
@@ -40,6 +41,26 @@ func (s *Store) GetWalletBalance(walletID string) (float64, string, error) {
 	return balance, currency, err
 }
 
+// claimRequest reserves the request before any balance changes, so a concurrent
+// retry blocks on the primary key until the first attempt commits or rolls back.
+func claimRequest(tx *sql.Tx, requestID, operation string) error {
+	res, err := tx.Exec(
+		`INSERT INTO requests (request_id, operation) VALUES ($1, $2) ON CONFLICT (request_id) DO NOTHING`,
+		requestID, operation,
+	)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrDuplicateRequest
+	}
+	return nil
+}
+
 func recordTx(tx *sql.Tx, requestID, operation string, fromWallet, toWallet *string, amount float64, status string) error {
 	_, err := tx.Exec(
 		`INSERT INTO transactions (request_id, operation, from_wallet, to_wallet, amount, status) VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -50,6 +71,9 @@ func recordTx(tx *sql.Tx, requestID, operation string, fromWallet, toWallet *str
 
 func (s *Store) Deposit(requestID, walletID string, amount float64) error {
 	return s.inTx(func(tx *sql.Tx) error {
+		if err := claimRequest(tx, requestID, "deposit"); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(`
 			INSERT INTO wallets (wallet_id, balance)
 			VALUES ($1, $2)
@@ -64,6 +88,9 @@ func (s *Store) Deposit(requestID, walletID string, amount float64) error {
 
 func (s *Store) Withdraw(requestID, walletID string, amount float64) error {
 	return s.inTx(func(tx *sql.Tx) error {
+		if err := claimRequest(tx, requestID, "withdraw"); err != nil {
+			return err
+		}
 		if err := debit(tx, walletID, amount); err != nil {
 			return err
 		}
@@ -73,6 +100,9 @@ func (s *Store) Withdraw(requestID, walletID string, amount float64) error {
 
 func (s *Store) Transfer(requestID, fromWallet, toWallet string, amount float64) error {
 	return s.inTx(func(tx *sql.Tx) error {
+		if err := claimRequest(tx, requestID, "transfer"); err != nil {
+			return err
+		}
 		if err := lockWallets(tx, fromWallet, toWallet); err != nil {
 			return err
 		}

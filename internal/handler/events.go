@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/fundingpips/wallet-service/internal/nats"
+	"github.com/fundingpips/wallet-service/internal/storage"
 )
 
 type Event struct {
@@ -12,6 +15,17 @@ type Event struct {
 	Status    string  `json:"status"`
 	Reason    *string `json:"reason"`
 	Timestamp string  `json:"timestamp"`
+}
+
+// A duplicate reports the outcome of the request that already ran: completed.
+func publishResult(nc *nats.Client, requestID, operation string, err error) {
+	switch {
+	case err == nil, errors.Is(err, storage.ErrDuplicateRequest):
+		publishCompleted(nc, requestID, operation)
+	default:
+		fmt.Printf("%s failed: %v\n", operation, err)
+		publishFailed(nc, requestID, operation, err.Error())
+	}
 }
 
 func publishCompleted(nc *nats.Client, requestID, operation string) {
