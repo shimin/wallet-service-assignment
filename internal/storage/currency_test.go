@@ -20,10 +20,10 @@ func TestOperationInForeignCurrencyIsRefused(t *testing.T) {
 	s := testStore(t)
 	wallet := newWalletIn(t, s, "USD", toAmount("100"))
 
-	if err := s.Deposit(newUUID(), wallet, toAmount("50"), "EUR"); !errors.Is(err, ErrCurrencyMismatch) {
+	if err := s.Deposit(t.Context(), newUUID(), wallet, toAmount("50"), "EUR"); !errors.Is(err, ErrCurrencyMismatch) {
 		t.Fatalf("deposit: want ErrCurrencyMismatch, got %v", err)
 	}
-	if err := s.Withdraw(newUUID(), wallet, toAmount("50"), "EUR"); !errors.Is(err, ErrCurrencyMismatch) {
+	if err := s.Withdraw(t.Context(), newUUID(), wallet, toAmount("50"), "EUR"); !errors.Is(err, ErrCurrencyMismatch) {
 		t.Fatalf("withdraw: want ErrCurrencyMismatch, got %v", err)
 	}
 	if b := balanceOf(t, s, wallet); !b.Equal(toAmount("100")) {
@@ -37,7 +37,7 @@ func TestTransferBetweenCurrenciesIsRefused(t *testing.T) {
 	src := newWalletIn(t, s, "USD", toAmount("100"))
 	dst := newWalletIn(t, s, "EUR", toAmount("100"))
 
-	if err := s.Transfer(newUUID(), src, dst, toAmount("30"), ""); !errors.Is(err, ErrCurrencyMismatch) {
+	if err := s.Transfer(t.Context(), newUUID(), src, dst, toAmount("30"), ""); !errors.Is(err, ErrCurrencyMismatch) {
 		t.Fatalf("want ErrCurrencyMismatch, got %v", err)
 	}
 	if from, to := balanceOf(t, s, src), balanceOf(t, s, dst); !from.Equal(toAmount("100")) || !to.Equal(toAmount("100")) {

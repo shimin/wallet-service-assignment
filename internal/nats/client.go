@@ -3,6 +3,7 @@ package nats
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/nats-io/nats.go"
 )
@@ -21,6 +22,20 @@ func Connect(url string) (*Client, error) {
 
 func (c *Client) Close() {
 	c.Conn.Close()
+}
+
+func (c *Client) Drain(timeout time.Duration) error {
+	closed := make(chan struct{})
+	c.Conn.SetClosedHandler(func(*nats.Conn) { close(closed) })
+	if err := c.Conn.Drain(); err != nil {
+		return err
+	}
+	select {
+	case <-closed:
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("drain: not finished in %s", timeout)
+	}
 }
 
 func (c *Client) PublishEvent(subject string, v interface{}) error {

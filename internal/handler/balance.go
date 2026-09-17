@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -19,7 +20,7 @@ type BalanceResponse struct {
 	Currency string       `json:"currency"`
 }
 
-func HandleBalance(store *storage.Store) natsgo.MsgHandler {
+func HandleBalance(ctx context.Context, store *storage.Store) natsgo.MsgHandler {
 	return func(msg *natsgo.Msg) {
 		var req BalanceRequest
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
@@ -27,7 +28,7 @@ func HandleBalance(store *storage.Store) natsgo.MsgHandler {
 			return
 		}
 
-		balance, currency, err := store.GetWalletBalance(req.WalletID)
+		balance, currency, err := store.GetWalletBalance(ctx, req.WalletID)
 		if err != nil {
 			fmt.Println("balance: wallet lookup failed:", err)
 			return

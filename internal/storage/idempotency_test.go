@@ -21,10 +21,10 @@ func TestRetriedRequestAppliedOnce(t *testing.T) {
 		wallet := newWallet(t, s, toAmount("100"))
 		reqID := newUUID()
 
-		if err := s.Deposit(reqID, wallet, toAmount("50"), ""); err != nil {
+		if err := s.Deposit(t.Context(), reqID, wallet, toAmount("50"), ""); err != nil {
 			t.Fatalf("first deposit: %v", err)
 		}
-		if err := s.Deposit(reqID, wallet, toAmount("50"), ""); err != nil {
+		if err := s.Deposit(t.Context(), reqID, wallet, toAmount("50"), ""); err != nil {
 			t.Logf("retry rejected: %v", err)
 		}
 
@@ -41,10 +41,10 @@ func TestRetriedRequestAppliedOnce(t *testing.T) {
 		wallet := newWallet(t, s, toAmount("100"))
 		reqID := newUUID()
 
-		if err := s.Withdraw(reqID, wallet, toAmount("40"), ""); err != nil {
+		if err := s.Withdraw(t.Context(), reqID, wallet, toAmount("40"), ""); err != nil {
 			t.Fatalf("first withdraw: %v", err)
 		}
-		if err := s.Withdraw(reqID, wallet, toAmount("40"), ""); err != nil {
+		if err := s.Withdraw(t.Context(), reqID, wallet, toAmount("40"), ""); err != nil {
 			t.Logf("retry rejected: %v", err)
 		}
 
@@ -61,10 +61,10 @@ func TestRetriedRequestAppliedOnce(t *testing.T) {
 		src, dst := newWallet(t, s, toAmount("100")), newWallet(t, s, toAmount("100"))
 		reqID := newUUID()
 
-		if err := s.Transfer(reqID, src, dst, toAmount("30"), ""); err != nil {
+		if err := s.Transfer(t.Context(), reqID, src, dst, toAmount("30"), ""); err != nil {
 			t.Fatalf("first transfer: %v", err)
 		}
-		if err := s.Transfer(reqID, src, dst, toAmount("30"), ""); err != nil {
+		if err := s.Transfer(t.Context(), reqID, src, dst, toAmount("30"), ""); err != nil {
 			t.Logf("retry rejected: %v", err)
 		}
 
@@ -86,10 +86,10 @@ func TestReusedRequestIDWithDifferentPayload(t *testing.T) {
 		wallet := newWallet(t, s, toAmount("100"))
 		reqID := newUUID()
 
-		if err := s.Deposit(reqID, wallet, toAmount("50"), ""); err != nil {
+		if err := s.Deposit(t.Context(), reqID, wallet, toAmount("50"), ""); err != nil {
 			t.Fatalf("first deposit: %v", err)
 		}
-		if err := s.Deposit(reqID, wallet, toAmount("70"), ""); !errors.Is(err, ErrRequestConflict) {
+		if err := s.Deposit(t.Context(), reqID, wallet, toAmount("70"), ""); !errors.Is(err, ErrRequestConflict) {
 			t.Fatalf("want ErrRequestConflict, got %v", err)
 		}
 		if b := balanceOf(t, s, wallet); !b.Equal(toAmount("150")) {
@@ -101,10 +101,10 @@ func TestReusedRequestIDWithDifferentPayload(t *testing.T) {
 		src, dst := newWallet(t, s, toAmount("100")), newWallet(t, s, toAmount("100"))
 		reqID := newUUID()
 
-		if err := s.Transfer(reqID, src, dst, toAmount("30"), ""); err != nil {
+		if err := s.Transfer(t.Context(), reqID, src, dst, toAmount("30"), ""); err != nil {
 			t.Fatalf("first transfer: %v", err)
 		}
-		if err := s.Transfer(reqID, dst, src, toAmount("30"), ""); !errors.Is(err, ErrRequestConflict) {
+		if err := s.Transfer(t.Context(), reqID, dst, src, toAmount("30"), ""); !errors.Is(err, ErrRequestConflict) {
 			t.Fatalf("want ErrRequestConflict, got %v", err)
 		}
 		if from, to := balanceOf(t, s, src), balanceOf(t, s, dst); !from.Equal(toAmount("70")) || !to.Equal(toAmount("130")) {
@@ -116,10 +116,10 @@ func TestReusedRequestIDWithDifferentPayload(t *testing.T) {
 		wallet := newWallet(t, s, toAmount("100"))
 		reqID := newUUID()
 
-		if err := s.Deposit(reqID, wallet, toAmount("50"), ""); err != nil {
+		if err := s.Deposit(t.Context(), reqID, wallet, toAmount("50"), ""); err != nil {
 			t.Fatalf("first deposit: %v", err)
 		}
-		if err := s.Withdraw(reqID, wallet, toAmount("50"), ""); !errors.Is(err, ErrRequestConflict) {
+		if err := s.Withdraw(t.Context(), reqID, wallet, toAmount("50"), ""); !errors.Is(err, ErrRequestConflict) {
 			t.Fatalf("want ErrRequestConflict, got %v", err)
 		}
 		if b := balanceOf(t, s, wallet); !b.Equal(toAmount("150")) {
@@ -137,7 +137,7 @@ func TestConcurrentRetriesOfSameTransfer(t *testing.T) {
 		reqID := newUUID()
 		ops := make([]op, 20)
 		for i := range ops {
-			ops[i] = func(string) error { return s.Transfer(reqID, src, dst, toAmount("100"), "") }
+			ops[i] = func(string) error { return s.Transfer(t.Context(), reqID, src, dst, toAmount("100"), "") }
 		}
 
 		successes, _ := runRace(ops)
@@ -162,7 +162,7 @@ func TestConcurrentRetriesOfSameRequest(t *testing.T) {
 		reqID := newUUID()
 		ops := make([]op, 20)
 		for i := range ops {
-			ops[i] = func(string) error { return s.Withdraw(reqID, wallet, toAmount("100"), "") }
+			ops[i] = func(string) error { return s.Withdraw(t.Context(), reqID, wallet, toAmount("100"), "") }
 		}
 
 		successes, _ := runRace(ops)

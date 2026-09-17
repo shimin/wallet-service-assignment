@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/fundingpips/wallet-service/internal/config"
 	"github.com/fundingpips/wallet-service/internal/handler"
@@ -32,18 +34,24 @@ func main() {
 		fmt.Println("failed to connect to nats:", err)
 		os.Exit(1)
 	}
-	defer nc.Close()
 	fmt.Println("connected to nats")
 
-	nc.Conn.Subscribe("wallet.deposit", handler.HandleDeposit(store, nc))
-	nc.Conn.Subscribe("wallet.withdraw", handler.HandleWithdraw(store, nc))
-	nc.Conn.Subscribe("wallet.transfer", handler.HandleTransfer(store, nc))
-	nc.Conn.Subscribe("wallet.balance", handler.HandleBalance(store))
+	work, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	nc.Conn.Subscribe("wallet.deposit", handler.HandleDeposit(work, store, nc))
+	nc.Conn.Subscribe("wallet.withdraw", handler.HandleWithdraw(work, store, nc))
+	nc.Conn.Subscribe("wallet.transfer", handler.HandleTransfer(work, store, nc))
+	nc.Conn.Subscribe("wallet.balance", handler.HandleBalance(work, store))
 
 	fmt.Println("wallet-service is running")
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
+	signals, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	<-signals.Done()
+
 	fmt.Println("shutting down")
+	if err := nc.Drain(5 * time.Second); err != nil {
+		fmt.Println(err)
+	}
 }

@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+
 	"github.com/fundingpips/wallet-service/internal/money"
 	"github.com/fundingpips/wallet-service/internal/nats"
 	"github.com/fundingpips/wallet-service/internal/storage"
@@ -22,13 +24,13 @@ func (r TransferRequest) validate() error {
 	return validateCurrency(r.Currency)
 }
 
-func HandleTransfer(store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
+func HandleTransfer(ctx context.Context, store *storage.Store, nc *nats.Client) natsgo.MsgHandler {
 	return func(msg *natsgo.Msg) {
 		var req TransferRequest
 		if !parse(nc, msg, "transfer", &req) {
 			return
 		}
 
-		publishResult(nc, req.RequestID, "transfer", store.Transfer(req.RequestID, req.FromWalletID, req.ToWalletID, req.Amount, req.Currency))
+		publishResult(nc, req.RequestID, "transfer", store.Transfer(ctx, req.RequestID, req.FromWalletID, req.ToWalletID, req.Amount, req.Currency))
 	}
 }
